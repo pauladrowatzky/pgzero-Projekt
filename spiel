@@ -1,1 +1,184 @@
+import pgzrun
+import random
 
+# -------------------------
+# GRUNDEINSTELLUNGEN
+# -------------------------
+GRID_SIZE = 3
+WIDTH = 600
+HEIGHT = 650
+TILE_SIZE = WIDTH // GRID_SIZE
+
+geld = 100
+level = 1
+goal = 200
+wetter = "Sonne"
+verbleibende_zeit = 60.0 (in seconds)
+
+# VARIABLE ZUM SPIELBEENDEN
+game_over = False
+
+# TIER (DEKO) (-> wahrscheinlich Hase, aber noch nicht sicher)
+
+tier = Actor("")
+tier.pos = (300, 620)
+
+# FARM DATENSTRUKTUR
+
+farm = [[{"status": "leer", "timer": 0, "pflanze": None}
+         for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+
+# MAUS INTERAKTION
+
+def on_mouse_down(pos):
+    global geld
+
+    if game_over:
+        return
+
+    x = pos[0] // TILE_SIZE
+    y = pos[1] // TILE_SIZE
+
+    if x < GRID_SIZE and y < GRID_SIZE:
+        tile = farm[y][x]
+
+        if tile["status"] == "leer":
+            bepflanzen(x, y)
+
+        elif tile["status"] == "wachsend":
+            waessern(x, y)
+
+        elif tile["status"] == "bereit":
+            ernten(x, y)
+
+# SPIELMECHANIK
+
+def bepflanzen(x, y):
+    global geld
+    tile = farm[y][x]
+
+    kosten = 5
+
+    if geld >= kosten:
+        tile["status"] = "wachsend"
+        tile["timer"] = 0
+        tile["pflanze"] = "tomate"
+        geld -= kosten
+
+
+def waessern(x, y):
+    tile = farm[y][x]
+    if tile["status"] == "wachsend":
+        tile["timer"] += 2
+
+
+def ernten(x, y):
+    global geld
+    tile = farm[y][x]
+
+    if tile["status"] == "bereit":
+        geld += 10
+        tile["status"] = "leer"
+        tile["timer"] = 0
+        tile["pflanze"] = None
+
+# WACHSTUMSSYSTEM
+
+def wachstum():
+    for row in farm:
+        for tile in row:
+            if tile["status"] == "wachsend":
+
+                speed = 1
+
+                if wetter == "Sonne":
+                    speed = 2
+                elif wetter == "Regen":
+                    speed = 3
+
+                tile["timer"] += speed
+
+                if tile["timer"] >= 6:
+                    tile["status"] = "bereit"
+
+# WETTERSYSTEM
+
+def update_wetter():
+    global wetter
+    wetter = random.choice(["Sonne", "Regen"])
+
+# TIMER + LEVEL
+
+def timer():
+    global verbleibende_zeit, game_over
+
+    verbleibende_zeit -= 1/60
+
+    if verbleibende_zeit <= 0:
+        game_over = True
+
+
+def check_level_up():
+    global level, goal, verbleibende_zeit
+
+    if geld >= goal:
+        level += 1
+        goal *= 2
+        verbleibende_zeit = 60
+        update_wetter()
+
+# TIERBEWEGUNG
+
+def bewegendes_tier():
+    tier.x += random.randint(-1, 1)
+    tier.y += random.randint(-1, 1)
+
+# UPDATE LOOP
+
+def update():
+    if game_over:
+        return
+
+    wachstum()
+    timer()
+    check_level_up()
+    bewegendes_tier()
+
+# DRAW-FUNKTION
+
+def draw():
+    screen.fill((255, 245, 250))
+
+    for y in range(GRID_SIZE):
+        for x in range(GRID_SIZE):
+            tile = farm[y][x]
+
+            rect = Rect((x*TILE_SIZE, y*TILE_SIZE),
+                        (TILE_SIZE-2, TILE_SIZE-2))
+
+            if tile["status"] == "leer":
+                screen.draw.filled_rect(rect, (255, 230, 240))
+
+            elif tile["status"] == "wachsend":
+                screen.draw.filled_rect(rect, (144, 238, 144))
+
+            elif tile["status"] == "bereit":
+                screen.draw.filled_rect(rect, (255, 182, 193))
+
+            screen.draw.rect(rect, (200, 200, 200))
+
+    tier.draw()
+
+    screen.draw.text(f"Geld: {geld}", (10, 610), color="black")
+    screen.draw.text(f"Level: {level}", (120, 610), color="black")
+    screen.draw.text(f"Ziel: {goal}", (220, 610), color="black")
+    screen.draw.text(f"Wetter: {wetter}", (320, 610), color="blue")
+    screen.draw.text(f"Zeit: {int(verbleibende_zeit)}", (480, 610), color="red")
+
+    if game_over:
+        screen.draw.text("GAME OVER",
+                         center=(WIDTH//2, HEIGHT//2),
+                         fontsize=60,
+                         color="red")
+
+pgzrun.go()
