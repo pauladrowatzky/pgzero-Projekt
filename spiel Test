@@ -1,0 +1,457 @@
+import pgzrun
+import random
+import math
+# PASTEL FARM TYCOON  
+
+# Pygame Zero
+# FENSTER
+
+GITTER_SPALTEN = 3
+GITTER_ZEILEN  = 3
+KACHEL_GROESSE = 160
+UI_HOEHE       = 100
+WIDTH          = GITTER_SPALTEN * KACHEL_GROESSE   # 480
+HEIGHT         = GITTER_ZEILEN  * KACHEL_GROESSE + UI_HOEHE  # 580
+TITLE          = “Pastel Farm Tycoon”
+FARM_HOEHE     = GITTER_ZEILEN * KACHEL_GROESSE    # 480
+
+# FARBEN  (fuer Texte, Balken und Overlays)
+
+FARBE_TEXT   = ( 90,  60,  80)
+FARBE_GOLD   = (255, 200,  80)
+FARBE_GRUEN  = (100, 200, 120)
+FARBE_ROT    = (240, 100, 100)
+FARBE_WASSER = (100, 180, 255)
+FARBE_UI     = (255, 235, 245)
+FARBE_GITTER = (220, 200, 210)
+
+# PFLANZENDATEN
+
+PFLANZEN = {
+“Tomate”: {
+“kosten”:    5,
+“gewinn”:   15,
+“wachszeit”: 8,
+“farbe”:    (255, 100, 100),
+“bild_keim”: “tomate_keim”,   # images/tomate_keim.png
+“bild_reif”: “tomate_reif”,   # images/tomate_reif.png
+},
+“Karotte”: {
+“kosten”:    3,
+“gewinn”:    8,
+“wachszeit”: 5,
+“farbe”:    (255, 160,  60),
+“bild_keim”: “karotte_keim”,
+“bild_reif”: “karotte_reif”,
+},
+“Erdbeere”: {
+“kosten”:    8,
+“gewinn”:   22,
+“wachszeit”:12,
+“farbe”:    (255,  80, 120),
+“bild_keim”: “erdbeere_keim”,
+“bild_reif”: “erdbeere_reif”,
+},
+“Sonnenblume”: {
+“kosten”:    6,
+“gewinn”:   18,
+“wachszeit”:10,
+“farbe”:    (255, 220,  60),
+“bild_keim”: “sonnenblume_keim”,
+“bild_reif”: “sonnenblume_reif”,
+},
+}
+PFLANZEN_LISTE = list(PFLANZEN.keys())
+
+# SPIELZUSTAND
+
+geld              = 50
+level             = 1
+level_ziel        = 150
+verbleibende_zeit = 90.0
+spiel_vorbei      = False
+gewonnen          = False
+wetter            = “Sonne”
+wetter_timer      = 0.0
+WETTER_INTERVALL  = 20.0
+
+ausgewaehlte_pflanze      = “Tomate”
+game_over_sound_gespielt  = False
+
+# Wasser-Partikel  {“x”, “y”, “dx”, “dy”, “leben”}
+
+wasser_partikel = []
+
+# BEETE  –  jedes Beet ist ein Actor-Objekt
+
+# beet_actors[zeile][spalte] = Actor(“beet_leer”)  usw.
+
+# farm[zeile][spalte]        = {“status”, “timer”, “pflanze”, “gewaessert”}
+
+farm        = []
+beet_actors = []
+
+for gy in range(GITTER_ZEILEN):
+farm_reihe  = []
+actor_reihe = []
+for gx in range(GITTER_SPALTEN):
+# Beet-Actor
+a = Actor(“beet_leer”)
+a.topleft = (gx * KACHEL_GROESSE, gy * KACHEL_GROESSE)
+actor_reihe.append(a)
+# Daten
+farm_reihe.append({
+“status”:     “leer”,
+“timer”:       0.0,
+“pflanze”:     None,
+“gewaessert”:  False,
+})
+beet_actors.append(actor_reihe)
+farm.append(farm_reihe)
+
+# TIER  –  Actor mit Animation
+
+tier = Actor(“hase_stehend”)
+tier.center = (WIDTH // 2, FARM_HOEHE - 30)
+
+tier_dx              = 0
+tier_dy              = 0
+tier_bewegungs_timer = 0.0
+tier_animation_timer = 0.0
+tier_animation_frame = 0
+tier_richtung        = “stehend”
+
+TIER_FRAMES = {
+“links”:    [“hase_links_1”,  “hase_links_2”],
+“rechts”:   [“hase_rechts_1”, “hase_rechts_2”],
+“stehend”:  [“hase_stehend”],
+}
+
+# WETTER-ACTOR
+
+wetter_icon = Actor(“wetter_sonne”)
+wetter_icon.topleft = (WIDTH - 50, FARM_HOEHE + 8)
+
+# HILFSFUNKTIONEN
+def sound_abspielen(name):
+“”“Spielt einen Sound ab – kein Absturz wenn Datei fehlt.”””
+try:
+getattr(sounds, name).play()
+except Exception:
+pass
+
+def musik_starten():
+try:
+music.play(“hintergrundmusik”)
+music.set_volume(0.4)
+except Exception:
+pass
+
+def beet_actor_aktualisieren(gx, gy):
+“”“Setzt das Beet-Actor-Bild passend zum Spielstatus.”””
+status = farm[gy][gx][“status”]
+if status == “leer”:
+beet_actors[gy][gx].image = “beet_leer”
+elif status == “wachsend”:
+beet_actors[gy][gx].image = “beet_wachsend”
+elif status == “bereit”:
+beet_actors[gy][gx].image = “beet_bereit”
+
+def wachstum_fortschritt(kachel):
+if kachel[“pflanze”] is None:
+return 0.0
+return min(kachel[“timer”] / PFLANZEN[kachel[“pflanze”]][“wachszeit”], 1.0)
+
+def abgerundetes_rechteck(farbe, rx, ry, rw, rh, radius=10):
+screen.draw.filled_rect(Rect(rx + radius, ry,          rw - 2*radius, rh),           farbe)
+screen.draw.filled_rect(Rect(rx,          ry + radius,  rw,           rh - 2*radius), farbe)
+for ex, ey in [(rx+radius, ry+radius), (rx+rw-radius, ry+radius),
+(rx+radius, ry+rh-radius), (rx+rw-radius, ry+rh-radius)]:
+screen.draw.filled_circle((ex, ey), radius, farbe)
+
+# SPIELMECHANIK
+
+def pflanzen(gx, gy):
+global geld
+kachel  = farm[gy][gx]
+p       = PFLANZEN[ausgewaehlte_pflanze]
+if geld >= p[“kosten”]:
+kachel[“status”]     = “wachsend”
+kachel[“timer”]      = 0.0
+kachel[“pflanze”]    = ausgewaehlte_pflanze
+kachel[“gewaessert”] = False
+geld -= p[“kosten”]
+beet_actor_aktualisieren(gx, gy)
+sound_abspielen(“pflanzen”)
+
+def giessen(gx, gy):
+kachel = farm[gy][gx]
+if kachel[“status”] == “wachsend”:
+kachel[“timer”]      += 2.0
+kachel[“gewaessert”] = True
+sound_abspielen(“giessen”)
+# Wasser-Partikel erzeugen
+mx = gx * KACHEL_GROESSE + KACHEL_GROESSE // 2
+my = gy * KACHEL_GROESSE + KACHEL_GROESSE // 2
+for _ in range(10):
+wasser_partikel.append({
+“x”:     mx + random.randint(-25, 25),
+“y”:     my + random.randint(-20, 20),
+“dx”:    random.uniform(-1.5, 1.5),
+“dy”:    random.uniform(-3.0, -0.5),
+“leben”: 1.0,
+})
+
+def ernten(gx, gy):
+global geld
+kachel = farm[gy][gx]
+if kachel[“status”] == “bereit”:
+geld += PFLANZEN[kachel[“pflanze”]][“gewinn”]
+kachel[“status”]     = “leer”
+kachel[“timer”]      = 0.0
+kachel[“pflanze”]    = None
+kachel[“gewaessert”] = False
+beet_actor_aktualisieren(gx, gy)
+sound_abspielen(“ernten”)
+
+def level_aufsteigen():
+global level, level_ziel, verbleibende_zeit, gewonnen
+if level >= 3:
+gewonnen = True
+return
+level     += 1
+level_ziel = int(level_ziel * 2.2)
+verbleibende_zeit = max(verbleibende_zeit, 60.0) + 30.0
+sound_abspielen(“level_up”)
+
+# MAUS-INTERAKTION
+
+def on_mouse_down(pos):
+global ausgewaehlte_pflanze
+if spiel_vorbei or gewonnen:
+    return
+
+# SHOP
+shop_x = 70
+for name in PFLANZEN_LISTE:
+    if shop_x <= pos[0] <= shop_x + 100 and FARM_HOEHE + 38 <= pos[1] <= FARM_HOEHE + 90:
+        ausgewaehlte_pflanze = name
+        return
+    shop_x += 108
+
+#Beet anklicken
+for gy in range(GITTER_ZEILEN):
+    for gx in range(GITTER_SPALTEN):
+        if beet_actors[gy][gx].collidepoint(pos):
+            kachel = farm[gy][gx]
+            if kachel["status"] == "leer":
+                pflanzen(gx, gy)
+            elif kachel["status"] == "wachsend":
+                giessen(gx, gy)
+            elif kachel["status"] == "bereit":
+                ernten(gx, gy)
+            return
+```
+# UPDATE
+
+def update(dt):
+global verbleibende_zeit, spiel_vorbei, gewonnen
+global wetter, wetter_timer
+global tier_dx, tier_dy
+global tier_bewegungs_timer, tier_animation_timer, tier_animation_frame, tier_richtung
+global game_over_sound_gespielt
+
+```
+if spiel_vorbei or gewonnen:
+    return
+
+for gy in range(GITTER_ZEILEN):
+    for gx in range(GITTER_SPALTEN):
+        kachel = farm[gy][gx]
+        if kachel["status"] == "wachsend":
+            speed = 1.5 if wetter == "Sonne" else 2.5
+            if kachel["gewaessert"]:
+                speed *= 1.3
+            kachel["timer"] += speed * dt
+            if kachel["timer"] >= PFLANZEN[kachel["pflanze"]]["wachszeit"]:
+                kachel["status"] = "bereit"
+                beet_actor_aktualisieren(gx, gy)
+
+# Wasser-Partikel 
+for p in wasser_partikel[:]:
+    p["x"]     += p["dx"]
+    p["y"]     += p["dy"]
+    p["leben"] -= dt * 1.8
+    if p["leben"] <= 0:
+        wasser_partikel.remove(p)
+
+# Wetterwechsel
+wetter_timer += dt
+if wetter_timer >= WETTER_INTERVALL:
+    wetter_timer = 0.0
+    wetter = random.choice(["Sonne", "Sonne", "Regen"])
+    wetter_icon.image = "wetter_sonne" if wetter == "Sonne" else "wetter_regen"
+
+# Zeit-Countdown
+verbleibende_zeit -= dt
+if verbleibende_zeit <= 0:
+    verbleibende_zeit = 0
+    spiel_vorbei = True
+    if not game_over_sound_gespielt:
+        game_over_sound_gespielt = True
+        sound_abspielen("game_over")
+
+# Level-Up
+if geld >= level_ziel:
+    level_aufsteigen()
+
+# Tier bewegen 
+tier_bewegungs_timer -= dt
+if tier_bewegungs_timer <= 0:
+    tier_bewegungs_timer = random.uniform(0.6, 1.8)
+    tier_dx = random.randint(-2, 2)
+    tier_dy = random.randint(-1, 1)
+    if tier_dx < 0:
+        tier_richtung = "links"
+    elif tier_dx > 0:
+        tier_richtung = "rechts"
+    else:
+        tier_richtung = "stehend"
+
+tier.x = max(20, min(WIDTH - 20, tier.x + tier_dx))
+tier.y = max(FARM_HOEHE - 65, min(FARM_HOEHE - 15, tier.y + tier_dy))
+
+# ---- Tier-Animation ----
+if tier_richtung != "stehend":
+    tier_animation_timer += dt
+    if tier_animation_timer >= 0.25:
+        tier_animation_timer = 0.0
+        tier_animation_frame = 1 - tier_animation_frame
+frames = TIER_FRAMES[tier_richtung]
+tier.image = frames[tier_animation_frame % len(frames)]
+```
+
+# ZEICHNEN
+
+def draw():
+# Hintergrund
+screen.blit(“hintergrund”, (0, 0))
+
+```
+# Beete (Actor-Bilder) + Pflanzen + Fortschrittsbalken
+for gy in range(GITTER_ZEILEN):
+    for gx in range(GITTER_SPALTEN):
+        _zeichne_kachel(gx, gy)
+
+# Wasser-Partikel
+for p in wasser_partikel:
+    screen.draw.filled_circle((int(p["x"]), int(p["y"])), 4, FARBE_WASSER)
+
+# Tier
+tier.draw()
+
+# UI-Leiste
+_zeichne_ui()
+
+# Wetter-Icon
+wetter_icon.draw()
+
+# Overlay
+if spiel_vorbei:
+    _zeichne_overlay("Game Over!", "Zeit abgelaufen – versuch's nochmal!", FARBE_ROT)
+elif gewonnen:
+    _zeichne_overlay("Gewonnen!", f"Alle {level} Level gemeistert!", FARBE_GRUEN)
+```
+
+# Kachel zeichnen
+
+def _zeichne_kachel(gx, gy):
+kachel = farm[gy][gx]
+px     = gx * KACHEL_GROESSE
+py     = gy * KACHEL_GROESSE
+
+```
+# Beet-Bild (Actor)
+beet_actors[gy][gx].draw()
+
+# Pflanzenbild
+if kachel["pflanze"] is not None:
+    p           = PFLANZEN[kachel["pflanze"]]
+    fortschritt = wachstum_fortschritt(kachel)
+    bild_name   = p["bild_reif"] if fortschritt >= 0.5 else p["bild_keim"]
+    pflanze_actor        = Actor(bild_name)
+    pflanze_actor.center = (px + KACHEL_GROESSE // 2,
+                            py + KACHEL_GROESSE // 2 - 10)
+    pflanze_actor.draw()
+
+    # Fortschrittsbalken
+    if kachel["status"] == "wachsend":
+        bx = px + 12
+        by = py + KACHEL_GROESSE - 20
+        bw = KACHEL_GROESSE - 24
+        screen.draw.filled_rect(Rect(bx, by, bw, 8), (200, 200, 200))
+        screen.draw.filled_rect(Rect(bx, by, int(bw * fortschritt), 8), FARBE_GRUEN)
+
+# Hinweis-Text
+if kachel["status"] == "leer":
+    screen.draw.text("Klick: Pflanzen",
+                     (px + 8, py + KACHEL_GROESSE - 22),
+                     fontsize=14, color=FARBE_TEXT)
+elif kachel["status"] == "wachsend":
+    screen.draw.text("Klick: Giessen",
+                     (px + 8, py + KACHEL_GROESSE - 22),
+                     fontsize=14, color=(60, 120, 60))
+elif kachel["status"] == "bereit":
+    screen.draw.text("Ernten!",
+                     (px + 8, py + KACHEL_GROESSE - 22),
+                     fontsize=14, color=(180, 60, 90))
+```
+# UI-Leiste
+
+def _zeichne_ui():
+abgerundetes_rechteck(FARBE_UI, 0, FARM_HOEHE, WIDTH, HEIGHT - FARM_HOEHE)
+screen.draw.line((0, FARM_HOEHE), (WIDTH, FARM_HOEHE), FARBE_GITTER)
+
+```
+# Geld / Level / Zeit
+zeit_farbe = FARBE_ROT if verbleibende_zeit < 15 else FARBE_TEXT
+screen.draw.text(f"Geld: {geld}",
+                 (10, FARM_HOEHE + 6), fontsize=22, color=FARBE_GOLD)
+screen.draw.text(f"Level {level}  |  Ziel: {level_ziel}",
+                 (120, FARM_HOEHE + 6), fontsize=20, color=FARBE_TEXT)
+screen.draw.text(f"Zeit: {int(verbleibende_zeit)}s",
+                 (WIDTH - 90, FARM_HOEHE + 6), fontsize=22, color=zeit_farbe)
+
+# Shop-Buttons
+screen.draw.text("Samen:", (10, FARM_HOEHE + 50), fontsize=16, color=FARBE_TEXT)
+shop_x = 70
+for name in PFLANZEN_LISTE:
+    p           = PFLANZEN[name]
+    ausgewaehlt = (name == ausgewaehlte_pflanze)
+    hg          = p["farbe"] if ausgewaehlt else (240, 230, 235)
+    abgerundetes_rechteck(hg, shop_x, FARM_HOEHE + 40, 100, 48, radius=8)
+    screen.draw.text(name[:7],
+                     (shop_x + 5, FARM_HOEHE + 43), fontsize=13, color=FARBE_TEXT)
+    screen.draw.text(f"Kosten {p['kosten']}  +{p['gewinn']}",
+                     (shop_x + 5, FARM_HOEHE + 61), fontsize=11, color=(100, 80, 90))
+    if ausgewaehlt:
+        screen.draw.rect(Rect(shop_x, FARM_HOEHE + 40, 100, 48), (180, 100, 140))
+    shop_x += 108
+```
+
+# Overlay (Game Over / Gewonnen)
+
+def _zeichne_overlay(titel, untertitel, farbe)
+abgerundetes_rechteck((255, 240, 248),
+WIDTH // 2 - 170, HEIGHT // 2 - 75, 340, 140, radius=18)
+screen.draw.text(titel,
+center=(WIDTH // 2, HEIGHT // 2 - 28),
+fontsize=44, color=farbe)
+screen.draw.text(untertitel,
+center=(WIDTH // 2, HEIGHT // 2 + 22),
+fontsize=20, color=FARBE_TEXT)
+
+# START
+
+musik_starten()
+pgzrun.go()
