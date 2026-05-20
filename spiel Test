@@ -1,7 +1,6 @@
 import pgzrun
 import random
 
-#fenster
 WIDTH     = 740
 HEIGHT    = 740
 TITLE     = "Pastel Farm Tycoon"
@@ -10,13 +9,11 @@ TITLE     = "Pastel Farm Tycoon"
 UI_HOEHE  = 90
 FARMHOEHE = HEIGHT - UI_HOEHE    # 650 px Spielfeld
 
-#layout
 SPALTEN       = 3
 ZEILEN        = 3
-BEETGROESSE   = 48     # Breite und Hoehe eines Beet-Bildes
-BEETABSTAND   = 130    # Abstand von Mitte zu Mitte (Beet + Luft)
+BEETGROESSE   = 48     
+BEETABSTAND   = 130    
 
-# Startposition oben links des gesamten Gitters (zentriert)
 GITTER_X = (WIDTH    - (SPALTEN - 1) * BEETABSTAND - BEETGROESSE) // 2   # 223
 GITTER_Y = (FARMHOEHE - (ZEILEN  - 1) * BEETABSTAND - BEETGROESSE) // 2  # 173
 
@@ -26,7 +23,6 @@ def beet_x(spalte):
 def beet_y(zeile):
     return GITTER_Y + zeile  * BEETABSTAND
 
-#farben
 TEXTFARBE   = ( 90,  60,  80)
 GOLDFARBE   = (255, 200,  80)
 GRUENFARBE  = (100, 200, 120)
@@ -71,7 +67,6 @@ PFLANZEN = {
 }
 PFLANZENLISTE = list(PFLANZEN.keys())
 
-#spielzustand
 geld              = 50
 level             = 1
 levelziel         = 150
@@ -84,8 +79,8 @@ WETTERINTERVALL   = 20.0
 gewaehltepflanze  = "Salat"
 endesoundgespielt = False
 
-
 partikel = []
+
 
 beetbilder = []
 beetdaten  = []
@@ -188,7 +183,7 @@ def giessen(spalte, zeile):
             ])
 
 def ernten(spalte, zeile):
-    global geld
+    global geld  # geld wird veraendert, muss als global deklariert sein
     daten = beetdaten[zeile][spalte]
     if daten[0] == "bereit":
         geld += PFLANZEN[daten[2]]["gewinn"]
@@ -232,7 +227,7 @@ def on_mouse_down(pos):
                 elif status == "bereit":
                     ernten(spalte, zeile)
                 return
-#update-funktion
+
 def update(dt):
     global restzeit, verloren, gewonnen
     global wetter, wettertimer
@@ -308,7 +303,7 @@ def update(dt):
             hase_schritt   = 1 - hase_schritt
     bilder     = HASE_BILDER[hase_richtung]
     hase.image = bilder[hase_schritt % len(bilder)]
-#draw-funktion
+
 def draw():
     # Hintergrund (740x740) wechselt je nach Wetter
     if wetter == "Sonne":
@@ -347,19 +342,15 @@ def beet_zeichnen(spalte, zeile):
     px    = beet_x(spalte)
     py    = beet_y(zeile)
 
-    # Beet-Bild (48x48)
     beetbilder[zeile][spalte].draw()
 
-    # Pflanzenbild (18x16) zentriert auf dem Beet
     if daten[2] is not None:
         f        = fortschritt(spalte, zeile)
         bildname = PFLANZEN[daten[2]]["reif"] if f >= 0.5 else PFLANZEN[daten[2]]["keim"]
-        pflbild        = Actor(bildname)
-        # Pflanze mittig auf dem 48x48-Beet, leicht nach oben versetzt
-        pflbild.center = (px + BEETGROESSE // 2, py + BEETGROESSE // 2 - 4)
-        pflbild.draw()
+        blit_x   = px + (BEETGROESSE - 18) // 2       # 48-18 = 30 → 15 px Rand
+        blit_y   = py + (BEETGROESSE - 16) // 2 - 4   # vertikal zentriert, leicht oben
+        screen.blit(bildname, (blit_x, blit_y))
 
-        # Fortschrittsbalken unter dem Beet (40px breit, 3px hoch)
         if daten[0] == "wachsend":
             bx = px + 4
             by = py + BEETGROESSE + 4
@@ -367,7 +358,6 @@ def beet_zeichnen(spalte, zeile):
             screen.draw.filled_rect(Rect(bx, by, bw, 3), (200, 200, 200))
             screen.draw.filled_rect(Rect(bx, by, int(bw * f), 3), GRUENFARBE)
 
-    # Kleines Status-Symbol unter dem Beet
     symboly = py + BEETGROESSE + 10
     if daten[0] == "leer":
         screen.draw.text("+", (px + BEETGROESSE // 2 - 4, symboly),
@@ -399,7 +389,6 @@ def ui_zeichnen():
     screen.draw.text(f"Zeit: {int(restzeit)}s",
                      (620, FARMHOEHE + 8), fontsize=20, color=zeitfarbe)
 
-    # Shop-Buttons – 4 Buttons gleichmaessig auf 740px verteilt
     shopx = 10
     for name in PFLANZENLISTE:
         p  = PFLANZEN[name]
@@ -420,6 +409,5 @@ def endbildschirm(titel, text, farbe):
                      center=(WIDTH // 2, HEIGHT // 2 - 28), fontsize=48, color=farbe)
     screen.draw.text(text,
                      center=(WIDTH // 2, HEIGHT // 2 + 22), fontsize=20, color=TEXTFARBE)
-
 musik_an()
 pgzrun.go()
