@@ -1,36 +1,42 @@
 import pgzrun
 import random
 
+# Fenster zeichnen
 WIDTH     = 740
 HEIGHT    = 740
 TITLE     = "Pastel Farm Tycoon"
 
-# UI-Leiste am unteren Rand
 UI_HOEHE  = 90
 FARMHOEHE = HEIGHT - UI_HOEHE    # 650 px Spielfeld
 
+# Gitterlayout festlegen
 SPALTEN       = 3
 ZEILEN        = 3
-BEETGROESSE   = 48     
-BEETABSTAND   = 130    
+BEETGROESSE   = 48
+BEETABSTAND   = 130
 
-GITTER_X = (WIDTH    - (SPALTEN - 1) * BEETABSTAND - BEETGROESSE) // 2   # 223
-GITTER_Y = (FARMHOEHE - (ZEILEN  - 1) * BEETABSTAND - BEETGROESSE) // 2  # 173
+GITTER_X = (WIDTH     - (SPALTEN - 1) * BEETABSTAND - BEETGROESSE) // 2
+GITTER_Y = (FARMHOEHE - (ZEILEN  - 1) * BEETABSTAND - BEETGROESSE) // 2
 
 def beet_x(spalte):
     return GITTER_X + spalte * BEETABSTAND
 
 def beet_y(zeile):
-    return GITTER_Y + zeile  * BEETABSTAND
+    return GITTER_Y + zeile * BEETABSTAND
 
-TEXTFARBE   = ( 90,  60,  80)
-GOLDFARBE   = (255, 200,  80)
-GRUENFARBE  = (100, 200, 120)
-ROTFARBE    = (240, 100, 100)
-WASSERFARBE = (100, 180, 255)
-UIFARBE     = (255, 235, 245)
-GITTERFARBE = (220, 200, 210)
+# benötigte Farben für Projekt definieren
+TEXTFARBE    = ( 90,  60,  80)
+GOLDFARBE    = (255, 200,  80)
+GRUENFARBE   = (100, 200, 120)
+ROTFARBE     = (240, 100, 100)
+WASSERFARBE  = (100, 180, 255)
+UIFARBE      = (255, 235, 245)
+GITTERFARBE  = (220, 200, 210)
+WEISSFARBE   = (255, 255, 255)
+HELLROSAFARBE= (255, 240, 248)
+DUNKELFARBE  = ( 60,  40,  60)
 
+# Pflanzendaten als actor in Liste erfassen
 PFLANZEN = {
     "Salat": {
         "kosten":    3,
@@ -67,6 +73,8 @@ PFLANZEN = {
 }
 PFLANZENLISTE = list(PFLANZEN.keys())
 
+# Spielzustand -> start = Startbildschirm mit Erklärung, spiel = laufendes Spiel, ende = Game Over oder gewonnen
+zustand           = "start"
 geld              = 50
 level             = 1
 levelziel         = 150
@@ -79,9 +87,17 @@ WETTERINTERVALL   = 20.0
 gewaehltepflanze  = "Salat"
 endesoundgespielt = False
 
+# Level-Up-Anzeige: Sekunden die der Hinweis noch sichtbar ist
+levelup_timer = 0.0
+
+# Wasser-Partikel: [x, y, dx, dy, leben]
 partikel = []
 
+# Musik-Pause: nach einem Soundeffekt kurz pausieren, dann weiterlaufen
+musik_pause_timer = 0.0
+MUSIK_PAUSE_DAUER = 1.2   # Sekunden – sollte laenger als der laengste Soundeffekt sein
 
+# Beete festlegen
 beetbilder = []
 beetdaten  = []
 
@@ -96,12 +112,15 @@ for zeile in range(ZEILEN):
     beetbilder.append(bildreihe)
     beetdaten.append(datenreihe)
 
+# Dekobäume ergänzen
 baum_links        = Actor("baum1")
 baum_links.center = (GITTER_X // 2, FARMHOEHE - 80)
 
 baum_rechts        = Actor("baum2")
 baum_rechts.center = (WIDTH - GITTER_X // 2, FARMHOEHE - 80)
 
+
+# Hase als Dekoobjekt ergänzen
 HASE_BEREICH_OBEN  = FARMHOEHE - 120
 HASE_BEREICH_UNTEN = FARMHOEHE - 20
 
@@ -120,18 +139,24 @@ HASE_BILDER = {
     "stehend": ["hase_stehend"],
 }
 
+# Hilfsfunktion für Management Sound/Musik parallel
 def sound(name):
+    global musik_pause_timer
     try:
         getattr(sounds, name).play()
+        music.pause()
+        musik_pause_timer = MUSIK_PAUSE_DAUER
     except Exception:
         pass
 
+#Hintergrundmusik als Endlosschleife
 def musik_an():
     try:
-        music.play("hintergrundmusik")
+        music.play("hintergrundmusik")   # pgzero loopt music.play() automatisch
         music.set_volume(0.4)
     except Exception:
         pass
+# Funktion für Status der Bilder + Ersetzen mit dem entsprechenden Bild
 
 def beetbild_setzen(spalte, zeile):
     status = beetdaten[zeile][spalte][0]
@@ -142,6 +167,7 @@ def beetbild_setzen(spalte, zeile):
     elif status == "bereit":
         beetbilder[zeile][spalte].image = "beet_bereit"
 
+# Fortschritt in Pflanzenwachstum
 def fortschritt(spalte, zeile):
     daten = beetdaten[zeile][spalte]
     if daten[2] is None:
@@ -155,22 +181,56 @@ def kasten(farbe, x, y, breite, hoehe, radius=8):
                    (x+radius, y+hoehe-radius), (x+breite-radius, y+hoehe-radius)]:
         screen.draw.filled_circle((ex, ey), radius, farbe)
 
+# Neustartfunktion nach Beendung Spiel
+def neustart():
+    # Ausgangszustand aller Variablen, um Neustart umzusetzen
+    global zustand, geld, level, levelziel, restzeit
+    global verloren, gewonnen, wetter, wettertimer
+    global endesoundgespielt, partikel, levelup_timer
+    global gewaehltepflanze, musik_pause_timer
+
+    zustand           = "spiel"
+    geld              = 50
+    level             = 1
+    levelziel         = 150
+    restzeit          = 90.0
+    verloren          = False
+    gewonnen          = False
+    wetter            = "Sonne"
+    wettertimer       = 0.0
+    endesoundgespielt = False
+    levelup_timer     = 0.0
+    musik_pause_timer = 0.0
+    partikel          = []
+    gewaehltepflanze  = "Salat"
+
+    # Alle Beete zurücksetzen
+    for zeile in range(ZEILEN):
+        for spalte in range(SPALTEN):
+            beetdaten[zeile][spalte] = ["leer", 0.0, None, False]
+            beetbild_setzen(spalte, zeile)
+
+    musik_an()
+
+# AB JETZT: EIGENTLICHE SPIELMECHANIK
+
+# funktion für Einpflanzen
 def einpflanzen(spalte, zeile):
     global geld
     kosten = PFLANZEN[gewaehltepflanze]["kosten"]
     if geld >= kosten:
         beetdaten[zeile][spalte] = ["wachsend", 0.0, gewaehltepflanze, False]
-        geld -= kosten
+        geld  = max(0, geld - kosten)   # Geld kann nie unter 0 fallen
         beetbild_setzen(spalte, zeile)
         sound("pflanzen")
 
+# Funktion zum Gießen
 def giessen(spalte, zeile):
     daten = beetdaten[zeile][spalte]
     if daten[0] == "wachsend":
         daten[1] += 2.0
         daten[3]  = True
         sound("giessen")
-        # Partikel um die Beetmitte
         mx = beet_x(spalte) + BEETGROESSE // 2
         my = beet_y(zeile)  + BEETGROESSE // 2
         for _ in range(8):
@@ -182,8 +242,9 @@ def giessen(spalte, zeile):
                 1.0,
             ])
 
+# Funktion für Ernten fertiger Pflanzen
 def ernten(spalte, zeile):
-    global geld  # geld wird veraendert, muss als global deklariert sein
+    global geld
     daten = beetdaten[zeile][spalte]
     if daten[0] == "bereit":
         geld += PFLANZEN[daten[2]]["gewinn"]
@@ -191,152 +252,111 @@ def ernten(spalte, zeile):
         beetbild_setzen(spalte, zeile)
         sound("ernten")
 
+# Funktion für Levelaufstieg nach Sieg
 def naechstes_level():
-    global level, levelziel, restzeit, gewonnen
+    global level, levelziel, restzeit, gewonnen, levelup_timer
     if level >= 3:
         gewonnen = True
         return
-    level    += 1
-    levelziel = int(levelziel * 2.2)
-    restzeit  = max(restzeit, 60.0) + 30.0
+    level         += 1
+    levelziel      = int(levelziel * 2.2)
+    restzeit       = max(restzeit, 60.0) + 30.0
+    levelup_timer  = 2.5   # Anzeige fuer 2,5 Sekunden einblenden
     sound("level_up")
 
+# Funktion für Ineraktion bei Klicken auf Objekte
 def on_mouse_down(pos):
-    global gewaehltepflanze
-
-    if verloren or gewonnen:
+    global zustand, gewaehltepflanze
+    # bei Klick starten
+    if zustand == "start":
+        neustart()
         return
+    # bei Klick Neustart
+    if zustand == "ende":
+        neustart()
+        return
+    # laufendes Spiel
+    if zustand == "spiel":
 
-    # Shop-Buttons
-    shopx = 10
-    for name in PFLANZENLISTE:
-        if shopx <= pos[0] <= shopx + 160 and FARMHOEHE + 38 <= pos[1] <= FARMHOEHE + 80:
-            gewaehltepflanze = name
-            return
-        shopx += 183
-
-    # Beete – Klick per collidepoint auf den 48x48 Actor
-    for zeile in range(ZEILEN):
-        for spalte in range(SPALTEN):
-            if beetbilder[zeile][spalte].collidepoint(pos):
-                status = beetdaten[zeile][spalte][0]
-                if status == "leer":
-                    einpflanzen(spalte, zeile)
-                elif status == "wachsend":
-                    giessen(spalte, zeile)
-                elif status == "bereit":
-                    ernten(spalte, zeile)
+        # Shop-Buttons
+        shopx = 10
+        for name in PFLANZENLISTE:
+            if shopx <= pos[0] <= shopx + 160 and FARMHOEHE + 38 <= pos[1] <= FARMHOEHE + 80:
+                gewaehltepflanze = name
                 return
+            shopx += 183
 
-def update(dt):
-    global restzeit, verloren, gewonnen
-    global wetter, wettertimer
-    global hase_richtung, hase_schritt, hase_bewtimer, hase_animtimer
-    global hase_dx, hase_dy
-    global endesoundgespielt
-
-    if verloren or gewonnen:
-        return
-
-    # Wachstum
-    for zeile in range(ZEILEN):
-        for spalte in range(SPALTEN):
-            daten = beetdaten[zeile][spalte]
-            if daten[0] == "wachsend":
-                tempo = 1.5 if wetter == "Sonne" else 2.5
-                if daten[3]:
-                    tempo *= 1.3
-                daten[1] += tempo * dt
-                if daten[1] >= PFLANZEN[daten[2]]["wachszeit"]:
-                    daten[0] = "bereit"
-                    beetbild_setzen(spalte, zeile)
-
-    # Wasser-Partikel
-    for p in partikel[:]:
-        p[0] += p[2]
-        p[1] += p[3]
-        p[4] -= dt * 1.8
-        if p[4] <= 0:
-            partikel.remove(p)
-
-    # Wetterwechsel
-    wettertimer += dt
-    if wettertimer >= WETTERINTERVALL:
-        wettertimer = 0.0
-        wetter = random.choice(["Sonne", "Sonne", "Regen"])
-
-    # Countdown
-    restzeit -= dt
-    if restzeit <= 0:
-        restzeit = 0
-        verloren = True
-        if not endesoundgespielt:
-            endesoundgespielt = True
-            sound("game_over")
-
-    # Level-Up
-    if geld >= levelziel:
-        naechstes_level()
-
-    # Hase bewegen
-    hase_bewtimer -= dt
-    if hase_bewtimer <= 0:
-        hase_bewtimer = random.uniform(0.6, 1.8)
-        hase_dx = random.randint(-2, 2)
-        hase_dy = random.randint(-1, 1)
-        if hase_dx < 0:
-            hase_richtung = "links"
-        elif hase_dx > 0:
-            hase_richtung = "rechts"
-        else:
-            hase_richtung = "stehend"
-
-    # Hase bleibt im unteren Spielfeldbereich
-    hase.x = max(20,              min(WIDTH - 20,           hase.x + hase_dx))
-    hase.y = max(HASE_BEREICH_OBEN, min(HASE_BEREICH_UNTEN, hase.y + hase_dy))
-
-    # Hase-Animation
-    if hase_richtung != "stehend":
-        hase_animtimer += dt
-        if hase_animtimer >= 0.25:
-            hase_animtimer = 0.0
-            hase_schritt   = 1 - hase_schritt
-    bilder     = HASE_BILDER[hase_richtung]
-    hase.image = bilder[hase_schritt % len(bilder)]
-
-def draw():
-    # Hintergrund (740x740) wechselt je nach Wetter
-    if wetter == "Sonne":
-        screen.blit("hintergrund_sonne", (0, 0))
-    else:
-        screen.blit("hintergrund_regen", (0, 0))
-
-    # Dekorationsbaeume (32x32)
-    baum_links.draw()
-    baum_rechts.draw()
-
-    # Beete (48x48) + Pflanzen (18x16) + Fortschrittsbalken
-    for zeile in range(ZEILEN):
-        for spalte in range(SPALTEN):
-            beet_zeichnen(spalte, zeile)
-
-    # Wasser-Partikel (kleine Punkte passend zur Pixel-Art-Groesse)
-    for p in partikel:
-        screen.draw.filled_circle((int(p[0]), int(p[1])), 2, WASSERFARBE)
-
-    # Hase (16x14)
-    hase.draw()
-
-    # UI-Leiste
-    ui_zeichnen()
-
-    # Endbildschirm
-    if verloren:
-        endbildschirm("Game Over!", "Zeit abgelaufen – versuch's nochmal!", ROTFARBE)
-    elif gewonnen:
-        endbildschirm("Gewonnen!", f"Alle {level} Level gemeistert!", GRUENFARBE)
+        # Beete
+        for zeile in range(ZEILEN):
+            for spalte in range(SPALTEN):
+                if beetbilder[zeile][spalte].collidepoint(pos):
+                    status = beetdaten[zeile][spalte][0]
+                    if status == "leer":
+                        einpflanzen(spalte, zeile)
+                    elif status == "wachsend":
+                        giessen(spalte, zeile)
+                    elif status == "bereit":
+                        ernten(spalte, zeile)
+                    return
 
 
+# Startbildschirm
+def startbildschirm_zeichnen():
+    kasten((255, 210, 230), WIDTH // 2 - 260, 40, 520, 80, radius=20)
+    screen.draw.text("Pastel Farm Tycoon",
+                     center=(WIDTH // 2, 80),
+                     fontsize=52, color=DUNKELFARBE)
+
+    # Erklärungskastenn
+    kasten(HELLROSAFARBE, 60, 145, 620, 470, radius=16)
+
+    # Spielziel
+    screen.draw.text("Ziel des Spiels",
+                     (90, 165), fontsize=22, color=DUNKELFARBE)
+    screen.draw.text("Verdiene genug Geld um alle 3 Level zu gewinnen.",
+                     (90, 193), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("Jedes Level hat ein hoeher Geldziel. Schaffst du es",
+                     (90, 215), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("vor Ablauf der Zeit?",
+                     (90, 237), fontsize=17, color=TEXTFARBE)
+
+    # Trennlinie
+    screen.draw.line((90, 265), (650, 265), GITTERFARBE)
+
+    # Steuerung
+    screen.draw.text("Steuerung  (alles per Mausklick)",
+                     (90, 278), fontsize=22, color=DUNKELFARBE)
+    screen.draw.text("+ Klick auf leeres Beet    Pflanze einsetzen",
+                     (90, 306), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("~ Klick auf wachsendes Beet   Pflanze giessen",
+                     (90, 328), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("! Klick auf reifes Beet    Ernte einsammeln",
+                     (90, 350), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("Shop unten   Pflanzensorte auswaehlen",
+                     (90, 372), fontsize=17, color=TEXTFARBE)
+
+    # Trennlinie
+    screen.draw.line((90, 400), (650, 400), GITTERFARBE)
+
+    # Tipps
+    screen.draw.text("Tipps",
+                     (90, 413), fontsize=22, color=DUNKELFARBE)
+    screen.draw.text("Regen beschleunigt das Wachstum staerker als Sonne.",
+                     (90, 441), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("Giessen verkuerzt die Wachszeit zusaetzlich.",
+                     (90, 463), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("Teures Gemuese bringt mehr Gewinn.",
+                     (90, 485), fontsize=17, color=TEXTFARBE)
+    screen.draw.text("Ernte immer rechtzeitig – die Zeit laeuft!",
+                     (90, 507), fontsize=17, color=TEXTFARBE)
+
+    # Start-Button
+    kasten((180, 220, 140), WIDTH // 2 - 140, 635, 280, 60, radius=14)
+    screen.draw.text("Klick zum Starten",
+                     center=(WIDTH // 2, 665),
+                     fontsize=26, color=WEISSFARBE)
+
+# Kachel zeichnen
 def beet_zeichnen(spalte, zeile):
     daten = beetdaten[zeile][spalte]
     px    = beet_x(spalte)
@@ -347,8 +367,8 @@ def beet_zeichnen(spalte, zeile):
     if daten[2] is not None:
         f        = fortschritt(spalte, zeile)
         bildname = PFLANZEN[daten[2]]["reif"] if f >= 0.5 else PFLANZEN[daten[2]]["keim"]
-        blit_x   = px + (BEETGROESSE - 18) // 2       # 48-18 = 30 → 15 px Rand
-        blit_y   = py + (BEETGROESSE - 16) // 2 - 4   # vertikal zentriert, leicht oben
+        blit_x   = px + (BEETGROESSE - 18) // 2
+        blit_y   = py + (BEETGROESSE - 16) // 2 - 4
         screen.blit(bildname, (blit_x, blit_y))
 
         if daten[0] == "wachsend":
@@ -369,18 +389,16 @@ def beet_zeichnen(spalte, zeile):
         screen.draw.text("!", (px + BEETGROESSE // 2 - 3, symboly),
                          fontsize=16, color=ROTFARBE)
 
-
+# UI-Leiste
 def ui_zeichnen():
     kasten(UIFARBE, 0, FARMHOEHE, WIDTH, UI_HOEHE)
     screen.draw.line((0, FARMHOEHE), (WIDTH, FARMHOEHE), GITTERFARBE)
 
-    # Wetter-Text
     wettertext  = "Sonne" if wetter == "Sonne" else "Regen"
     wetterfarbe = GOLDFARBE if wetter == "Sonne" else (100, 140, 220)
     screen.draw.text(f"Wetter: {wettertext}",
                      (10, FARMHOEHE + 8), fontsize=18, color=wetterfarbe)
 
-    # Geld / Level / Zeit
     zeitfarbe = ROTFARBE if restzeit < 15 else TEXTFARBE
     screen.draw.text(f"Geld: {geld}",
                      (200, FARMHOEHE + 8), fontsize=20, color=GOLDFARBE)
@@ -402,12 +420,165 @@ def ui_zeichnen():
             screen.draw.rect(Rect(shopx, FARMHOEHE + 38, 160, 42), (180, 100, 140))
         shopx += 183
 
+# Level up Anzeige
+def levelup_anzeige_zeichnen():
+    kasten((220, 255, 220), WIDTH // 2 - 140, HEIGHT // 2 - 35, 280, 70, radius=14)
+    screen.draw.text(f"Level {level} erreicht!",
+                     center=(WIDTH // 2, HEIGHT // 2 - 10),
+                     fontsize=30, color=(40, 140, 60))
+    screen.draw.text(f"Neues Ziel: {levelziel} Geld",
+                     center=(WIDTH // 2, HEIGHT // 2 + 18),
+                     fontsize=18, color=TEXTFARBE)
 
-def endbildschirm(titel, text, farbe):
-    kasten((255, 240, 248), WIDTH // 2 - 200, HEIGHT // 2 - 75, 400, 140, radius=18)
+
+# Endbildschirm
+def endbildschirm_zeichnen(titel, zeile1, zeile2, farbe):
+    kasten(HELLROSAFARBE, WIDTH // 2 - 210, HEIGHT // 2 - 90, 420, 175, radius=18)
     screen.draw.text(titel,
-                     center=(WIDTH // 2, HEIGHT // 2 - 28), fontsize=48, color=farbe)
-    screen.draw.text(text,
-                     center=(WIDTH // 2, HEIGHT // 2 + 22), fontsize=20, color=TEXTFARBE)
+                     center=(WIDTH // 2, HEIGHT // 2 - 50),
+                     fontsize=52, color=farbe)
+    screen.draw.text(zeile1,
+                     center=(WIDTH // 2, HEIGHT // 2 + 5),
+                     fontsize=22, color=TEXTFARBE)
+    screen.draw.text(zeile2,
+                     center=(WIDTH // 2, HEIGHT // 2 + 45),
+                     fontsize=18, color=(160, 130, 150))
+
+
+# Update-Funktion
+def update(dt):
+    global restzeit, verloren, gewonnen, zustand
+    global wetter, wettertimer
+    global hase_richtung, hase_schritt, hase_bewtimer, hase_animtimer
+    global hase_dx, hase_dy
+    global endesoundgespielt, levelup_timer, musik_pause_timer
+
+    # Auf Start-/Endbildschirm nichts berechnen
+    if zustand != "spiel":
+        return
+
+    # Musikpause-Timer -> für Umgang Timing Sounds + Musik
+    if musik_pause_timer > 0:
+        musik_pause_timer -= dt
+        if musik_pause_timer <= 0:
+            musik_pause_timer = 0.0
+            try:
+                music.unpause()   
+            except Exception:
+                
+    # Levelaufstieg sichtbar in Anzeige
+    if levelup_timer > 0:
+        levelup_timer -= dt
+
+    # Funktion für Wachstum
+    for zeile in range(ZEILEN):
+        for spalte in range(SPALTEN):
+            daten = beetdaten[zeile][spalte]
+            if daten[0] == "wachsend":
+                tempo = 1.5 if wetter == "Sonne" else 2.5
+                if daten[3]:
+                    tempo *= 1.3
+                daten[1] += tempo * dt
+                if daten[1] >= PFLANZEN[daten[2]]["wachszeit"]:
+                    daten[0] = "bereit"
+                    beetbild_setzen(spalte, zeile)
+
+    # Wasserpartikel
+    for p in partikel[:]:
+        p[0] += p[2]
+        p[1] += p[3]
+        p[4] -= dt * 1.8
+        if p[4] <= 0:
+            partikel.remove(p)
+
+    # Wetterwechsel
+    wettertimer += dt
+    if wettertimer >= WETTERINTERVALL:
+        wettertimer = 0.0
+        wetter = random.choice(["Sonne", "Sonne", "Regen"])
+
+    # Countdown (restliche Zeit im Level)
+    restzeit -= dt
+    if restzeit <= 0:
+        restzeit = 0
+        verloren = True
+        zustand  = "ende"
+        if not endesoundgespielt:
+            endesoundgespielt = True
+            sound("game_over")
+
+    # Levelaufstieg
+    if geld >= levelziel and not gewonnen:
+        naechstes_level()
+        if gewonnen:
+            zustand = "ende"
+
+    # Bewegung Hase mit Fotos sichtbar
+    hase_bewtimer -= dt
+    if hase_bewtimer <= 0:
+        hase_bewtimer = random.uniform(0.6, 1.8)
+        hase_dx = random.randint(-2, 2)
+        hase_dy = random.randint(-1, 1)
+        if hase_dx < 0:
+            hase_richtung = "links"
+        elif hase_dx > 0:
+            hase_richtung = "rechts"
+        else:
+            hase_richtung = "stehend"
+
+    hase.x = max(20,               min(WIDTH - 20,            hase.x + hase_dx))
+    hase.y = max(HASE_BEREICH_OBEN, min(HASE_BEREICH_UNTEN,  hase.y + hase_dy))
+
+    if hase_richtung != "stehend":
+        hase_animtimer += dt
+        if hase_animtimer >= 0.25:
+            hase_animtimer = 0.0
+            hase_schritt   = 1 - hase_schritt
+    bilder     = HASE_BILDER[hase_richtung]
+    hase.image = bilder[hase_schritt % len(bilder)]
+
+# Zeichnungsfunktion
+def draw():
+    if zustand == "start":
+        startbildschirm_zeichnen()
+        return
+
+    # Hintergrund wechselt je nach Wetter
+    if wetter == "Sonne":
+        screen.blit("hintergrund_sonne", (0, 0))
+    else:
+        screen.blit("hintergrund_regen", (0, 0))
+
+    baum_links.draw()
+    baum_rechts.draw()
+
+    for zeile in range(ZEILEN):
+        for spalte in range(SPALTEN):
+            beet_zeichnen(spalte, zeile)
+
+    for p in partikel:
+        screen.draw.filled_circle((int(p[0]), int(p[1])), 2, WASSERFARBE)
+
+    hase.draw()
+    ui_zeichnen()
+
+    # Level-Up-Anzeige
+    if levelup_timer > 0:
+        levelup_anzeige_zeichnen()
+
+    # Endbildschirm
+    if zustand == "ende":
+        if verloren:
+            endbildschirm_zeichnen("Game Over!",
+                                   "Zeit abgelaufen.",
+                                   "Klick zum Neustart",
+                                   ROTFARBE)
+        elif gewonnen:
+            endbildschirm_zeichnen("Gewonnen!",
+                                   f"Alle {level} Level gemeistert!",
+                                   "Klick zum Neustart",
+                                   GRUENFARBE)
+
+# Start
 musik_an()
 pgzrun.go()
