@@ -105,7 +105,7 @@ for zeile in range(ZEILEN):
     bildreihe  = []
     datenreihe = []
     for spalte in range(SPALTEN):
-        beet         = Actor("beet_leer")
+        beet = Actor("beet_leer")
         beet.topleft = (beet_x(spalte), beet_y(zeile))
         bildreihe.append(beet)
         datenreihe.append(["leer", 0.0, None, False])
@@ -113,10 +113,10 @@ for zeile in range(ZEILEN):
     beetdaten.append(datenreihe)
 
 # Dekobäume ergänzen
-baum_links        = Actor("baum1")
+baum_links = Actor("baum1")
 baum_links.center = (GITTER_X // 2, FARMHOEHE - 80)
 
-baum_rechts        = Actor("baum2")
+baum_rechts = Actor("baum2")
 baum_rechts.center = (WIDTH - GITTER_X // 2, FARMHOEHE - 80)
 
 
@@ -124,7 +124,7 @@ baum_rechts.center = (WIDTH - GITTER_X // 2, FARMHOEHE - 80)
 HASE_BEREICH_OBEN  = FARMHOEHE - 120
 HASE_BEREICH_UNTEN = FARMHOEHE - 20
 
-hase           = Actor("hase_stehend")
+hase = Actor("hase_stehend")
 hase.center    = (WIDTH // 2, HASE_BEREICH_UNTEN - 7)
 hase_richtung  = "stehend"
 hase_schritt   = 0
